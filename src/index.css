@@ -1,0 +1,206 @@
+@import "tailwindcss";
+
+@theme {
+  --color-porcelain: #faf7f2;
+  --color-sand: #f0e9df;
+  --color-ink: #211c15;
+  --color-ink-soft: #6f6558;
+  --color-champagne: #c6a15b;
+  --color-bronze: #8a6a33;
+  --color-night: #12100d;
+  --color-night-soft: #1c1712;
+  --color-cream: #f5efe6;
+
+  --font-display: "Fraunces", Georgia, serif;
+  --font-sans: "Instrument Sans", system-ui, sans-serif;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    color-scheme: only light;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
+  body {
+    @apply bg-porcelain font-sans text-ink antialiased;
+  }
+  ::selection {
+    background: rgb(198 161 91 / 0.35);
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-bronze);
+    outline-offset: 3px;
+  }
+}
+
+@utility container-x {
+  margin-inline: auto;
+  width: 100%;
+  max-width: 1200px;
+  padding-inline: 1.25rem;
+  @media (width >= 48rem) {
+    padding-inline: 2.5rem;
+  }
+}
+
+@layer components {
+  .eyebrow {
+    @apply font-sans text-[0.72rem] font-medium tracking-[0.22em] uppercase text-bronze;
+  }
+  .dark-act .eyebrow {
+    @apply text-champagne;
+  }
+
+  .display {
+    @apply font-display font-light leading-[1.04] tracking-[-0.01em];
+    font-optical-sizing: auto;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-ink px-7 py-3.5 font-sans text-[0.95rem] font-medium text-porcelain transition-colors duration-300;
+  }
+  .btn-primary:hover {
+    @apply bg-night;
+  }
+  .dark-act .btn-primary,
+  .btn-primary.on-dark {
+    @apply bg-cream text-night;
+  }
+  .btn-link {
+    @apply inline-flex items-center gap-2 font-sans text-[0.95rem] font-medium text-ink underline decoration-champagne decoration-1 underline-offset-8 transition-colors duration-300;
+  }
+  .btn-link:hover {
+    @apply text-bronze;
+  }
+
+  .rule {
+    @apply h-px w-12 bg-champagne;
+  }
+
+  /* ---- Placeholders "estudo de luz" (substituídos pelos assets do Higgsfield) ---- */
+  .scene {
+    position: relative;
+    overflow: hidden;
+    background-color: #e9dfd0;
+    background-size: 170% 170%;
+    background-position: 30% 30%;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .scene {
+      animation: scene-drift 22s ease-in-out infinite alternate;
+    }
+  }
+  .scene::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+    opacity: 0.16;
+    mix-blend-mode: overlay;
+    pointer-events: none;
+  }
+  .scene-skin {
+    background-image:
+      radial-gradient(115% 90% at 18% 12%, #f7ead9 0%, transparent 55%),
+      radial-gradient(120% 100% at 85% 88%, #d3b08a 0%, transparent 60%),
+      radial-gradient(80% 80% at 70% 30%, #eddac2 0%, transparent 70%);
+    background-color: #e6d2ba;
+  }
+  .scene-gold {
+    background-image:
+      linear-gradient(112deg, transparent 38%, rgb(198 161 91 / 0.4) 50%, transparent 62%),
+      radial-gradient(120% 110% at 80% 15%, #f3e6cd 0%, transparent 60%),
+      radial-gradient(130% 110% at 15% 90%, #dcc49a 0%, transparent 65%);
+    background-color: #eadfc9;
+  }
+  .scene-linen {
+    background-image:
+      radial-gradient(120% 100% at 25% 20%, #f8f3ea 0%, transparent 60%),
+      radial-gradient(110% 100% at 80% 85%, #ddd0bb 0%, transparent 60%);
+    background-color: #ece3d3;
+  }
+  .scene-amber {
+    background-image:
+      radial-gradient(110% 95% at 75% 20%, #ecd4a8 0%, transparent 55%),
+      radial-gradient(130% 110% at 20% 90%, #b98d55 0%, transparent 65%);
+    background-color: #d5b586;
+  }
+  .scene-dark {
+    background-image:
+      radial-gradient(95% 85% at 50% 100%, rgb(198 161 91 / 0.32) 0%, transparent 60%),
+      radial-gradient(120% 100% at 80% 10%, #2a2218 0%, transparent 60%);
+    background-color: #171310;
+  }
+  .scene-dark-door {
+    background-image:
+      linear-gradient(90deg, transparent 46%, rgb(230 200 140 / 0.5) 50%, transparent 54%),
+      radial-gradient(70% 60% at 50% 55%, rgb(198 161 91 / 0.2) 0%, transparent 70%);
+    background-color: #141110;
+  }
+  .scene-dark-hall {
+    background-image:
+      linear-gradient(90deg, transparent 30%, rgb(214 180 120 / 0.24) 50%, transparent 70%),
+      radial-gradient(80% 90% at 50% 90%, rgb(198 161 91 / 0.3) 0%, transparent 65%);
+    background-color: #191512;
+  }
+  .scene-dark-room {
+    background-image:
+      radial-gradient(100% 90% at 70% 40%, rgb(236 212 168 / 0.4) 0%, transparent 60%),
+      radial-gradient(120% 100% at 20% 90%, #241d15 0%, transparent 70%);
+    background-color: #1e1914;
+  }
+  @keyframes scene-drift {
+    from {
+      background-position: 30% 30%;
+    }
+    to {
+      background-position: 65% 60%;
+    }
+  }
+
+  .scene-label {
+    @apply absolute bottom-2.5 left-2.5 z-10 rounded-full bg-night/70 px-2.5 py-1 font-sans text-[0.62rem] font-medium tracking-[0.08em] text-cream/90;
+  }
+
+  /* Varredura de luz do hero */
+  .light-sweep {
+    position: absolute;
+    inset: -30%;
+    background: linear-gradient(105deg, transparent 42%, rgb(255 240 210 / 0.5) 50%, transparent 58%);
+    pointer-events: none;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .light-sweep {
+      animation: sweep 13s ease-in-out infinite alternate;
+    }
+  }
+  @keyframes sweep {
+    from {
+      transform: translateX(-18%) rotate(0.001deg);
+    }
+    to {
+      transform: translateX(18%) rotate(0.001deg);
+    }
+  }
+
+  /* FAQ accordion */
+  .faq-item {
+    @apply border-b border-ink/10;
+  }
+  .faq-item summary {
+    @apply flex cursor-pointer list-none items-center justify-between gap-6 py-5 font-display text-xl font-normal;
+  }
+  .faq-item summary::-webkit-details-marker {
+    display: none;
+  }
+  .faq-item summary .faq-icon {
+    @apply text-bronze transition-transform duration-300;
+  }
+  .faq-item[open] summary .faq-icon {
+    transform: rotate(45deg);
+  }
+}
