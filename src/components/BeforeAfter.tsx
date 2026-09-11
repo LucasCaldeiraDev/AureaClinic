@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import MediaPlaceholder from "./MediaPlaceholder";
 
 // Slot deliberadamente sem imagem: antes/depois clínico não se inventa (norma dos
@@ -31,9 +31,42 @@ function SlotHint({ side }: { side: "antes" | "depois" }) {
 
 export default function BeforeAfter() {
   const [pos, setPos] = useState(50);
+  const trackRef = useRef<HTMLDivElement | null>(null);
+  const draggingRef = useRef(false);
+
+  const updateFromClientX = useCallback((clientX: number) => {
+    const el = trackRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const ratio = (clientX - rect.left) / rect.width;
+    setPos(Math.round(Math.min(100, Math.max(0, ratio * 100))));
+  }, []);
+
+  // Pointer Events (não o drag nativo do <input type="range">): funciona igual em
+  // mouse e touch e, com touch-action: none, o arrasto horizontal não briga com o
+  // scroll vertical da página no celular.
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    draggingRef.current = true;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    updateFromClientX(e.clientX);
+  };
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!draggingRef.current) return;
+    updateFromClientX(e.clientX);
+  };
+  const endDrag = () => {
+    draggingRef.current = false;
+  };
 
   return (
-    <div className="relative aspect-[4/3] overflow-hidden rounded-[3px] select-none">
+    <div
+      ref={trackRef}
+      className="relative aspect-[4/3] touch-none overflow-hidden rounded-[3px] select-none"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+    >
       <MediaPlaceholder
         assetId="caso real"
         variant="linen"
@@ -59,20 +92,21 @@ export default function BeforeAfter() {
         style={{ left: `${pos}%` }}
         aria-hidden="true"
       >
-        <span className="absolute top-1/2 left-1/2 flex size-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-cream text-ink shadow-md">
+        <span className="absolute top-1/2 left-1/2 flex size-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-cream text-ink shadow-md">
           <svg width="14" height="10" viewBox="0 0 14 10" fill="none" aria-hidden="true">
             <path d="M4 1 1 5l3 4M10 1l3 4-3 4" stroke="currentColor" strokeWidth="1.5" />
           </svg>
         </span>
       </div>
 
-      <span className="absolute top-3 left-3 rounded-full bg-night/60 px-3 py-1 text-[0.68rem] font-medium tracking-[0.14em] text-cream uppercase">
+      <span className="pointer-events-none absolute top-3 left-3 rounded-full bg-night/60 px-3 py-1 text-[0.68rem] font-medium tracking-[0.14em] text-cream uppercase">
         antes
       </span>
-      <span className="absolute top-3 right-3 rounded-full bg-night/60 px-3 py-1 text-[0.68rem] font-medium tracking-[0.14em] text-cream uppercase">
+      <span className="pointer-events-none absolute top-3 right-3 rounded-full bg-night/60 px-3 py-1 text-[0.68rem] font-medium tracking-[0.14em] text-cream uppercase">
         depois
       </span>
 
+      {/* Só para teclado/leitor de tela — o arrasto por ponteiro é tratado acima */}
       <input
         type="range"
         min={0}
@@ -80,7 +114,7 @@ export default function BeforeAfter() {
         value={pos}
         onChange={(e) => setPos(Number(e.target.value))}
         aria-label="Comparar antes e depois"
-        className="absolute inset-0 h-full w-full cursor-ew-resize opacity-0"
+        className="sr-only"
       />
     </div>
   );

@@ -13,7 +13,7 @@ const EDGE_PATHS = [
 const edge = EDGE_PATHS.find((p) => existsSync(p));
 if (!edge) throw new Error("Edge não encontrado");
 
-const URL = "http://localhost:5173";
+const URL = "http://localhost:5273";
 const errors = [];
 
 const browser = await puppeteer.launch({ executablePath: edge, headless: "new" });

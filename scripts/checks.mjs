@@ -10,7 +10,7 @@ const EDGE_PATHS = [
   "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
 ];
 const edge = EDGE_PATHS.find((p) => existsSync(p));
-const URL = "http://localhost:5173";
+const URL = "http://localhost:5273";
 
 const browser = await puppeteer.launch({ executablePath: edge, headless: "new" });
 

@@ -36,6 +36,10 @@ const steps = [
 ];
 
 const VIDEO_DURATION = 8;
+// Governador do scrub: mesmo que o scroll salte muito rápido, o vídeo nunca busca
+// mais que isso (segundos de vídeo por segundo real) — evita seek além do que o
+// navegador conseguiu decodificar, que é o que causa gap/travada na tela.
+const MAX_SEEK_RATE = 5;
 
 // Ato imersivo: em desktop (sem prefers-reduced-motion) a seção é pinada e o scroll
 // controla o tempo do vídeo V2 (docs/animation-plan.md). Mobile/PRM: stepper estático.
@@ -86,25 +90,13 @@ function PinnedExperience() {
           },
         });
 
-        // Scroll controla o tempo do vídeo (seek suave nos dois sentidos).
+        // scrubState.t é só o "alvo": o valor para onde o vídeo deveria estar,
+        // segundo a posição do scroll. Quem realmente busca no vídeo é o
+        // governador abaixo — nenhum onUpdate aqui.
+        const scrubState = { t: 0 };
         if (video) {
           video.pause();
-          const scrubState = { t: 0 };
-          tl.to(
-            scrubState,
-            {
-              t: VIDEO_DURATION,
-              ease: "none",
-              duration: 3.9,
-              onUpdate: () => {
-                if (video.readyState >= 1) {
-                  const max = video.duration || VIDEO_DURATION;
-                  video.currentTime = Math.min(scrubState.t, max - 0.05);
-                }
-              },
-            },
-            0,
-          );
+          tl.to(scrubState, { t: VIDEO_DURATION, ease: "none", duration: 3.9 }, 0);
         }
 
         tl.to(".exp-progress-fill", { scaleX: 1, ease: "none", duration: 3.9 }, 0);
@@ -118,6 +110,41 @@ function PinnedExperience() {
         if (pageEl) {
           tl.to(pageEl, { backgroundColor: "#faf7f2", ease: "none", duration: 0.5 }, 3.95);
         }
+
+        // Governador do scrub: roda em TODO frame do ticker do GSAP — não só
+        // enquanto o tween acima está "ativo" — e nunca deixa video.currentTime
+        // avançar mais rápido que MAX_SEEK_RATE (segundos de vídeo por segundo
+        // real). Sem isso, um scroll brusco pede um salto de vários segundos
+        // num único frame, o navegador não tem esse trecho decodificado ainda,
+        // e a tela trava/pisca. Rodar no ticker (em vez de dentro do onUpdate do
+        // tween) evita dois bugs: o vídeo ficar preso no meio do caminho quando
+        // o tween "termina" antes do governador alcançar o alvo, e um dt
+        // desatualizado inflar o primeiro passo depois de um período parado.
+        let governor: (() => void) | null = null;
+        if (video) {
+          let lastTick = performance.now();
+          governor = () => {
+            if (video.readyState < 1) return;
+            const max = video.duration || VIDEO_DURATION;
+            const target = Math.min(Math.max(scrubState.t, 0), max - 0.05);
+
+            const now = performance.now();
+            const dt = Math.min((now - lastTick) / 1000, 0.1);
+            lastTick = now;
+
+            const maxStep = MAX_SEEK_RATE * dt;
+            const delta = target - video.currentTime;
+            const clampedDelta = Math.max(-maxStep, Math.min(maxStep, delta));
+            if (Math.abs(clampedDelta) > 0.0005) {
+              video.currentTime += clampedDelta;
+            }
+          };
+          gsap.ticker.add(governor);
+        }
+
+        return () => {
+          if (governor) gsap.ticker.remove(governor);
+        };
       });
     },
     { scope: ref },
