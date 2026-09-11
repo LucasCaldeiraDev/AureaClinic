@@ -1,6 +1,7 @@
-import { useEffect, useRef } from "react";
-import { gsap, useGSAP, MQ_MOTION_DESKTOP } from "../lib/gsapSetup";
+import { useEffect, useRef, useState } from "react";
+import { gsap, useGSAP, MQ_MOTION_ANY, MQ_DESKTOP } from "../lib/gsapSetup";
 import { useMediaQuery } from "../lib/useMediaQuery";
+import { attachScrubGovernor } from "../lib/scrubGovernor";
 import { EXPERIENCE_VIDEO, MEDIA } from "../media";
 import MediaPlaceholder from "./MediaPlaceholder";
 
@@ -36,16 +37,19 @@ const steps = [
 ];
 
 const VIDEO_DURATION = 8;
-// Governador do scrub: mesmo que o scroll salte muito rápido, o vídeo nunca busca
-// mais que isso (segundos de vídeo por segundo real) — evita seek além do que o
-// navegador conseguiu decodificar, que é o que causa gap/travada na tela.
-const MAX_SEEK_RATE = 5;
 
-// Ato imersivo: em desktop (sem prefers-reduced-motion) a seção é pinada e o scroll
-// controla o tempo do vídeo V2 (docs/animation-plan.md). Mobile/PRM: stepper estático.
+// Ato imersivo, três variantes (docs/animation-plan.md):
+// - desktop com movimento: seção pinada, scroll controla o tempo do vídeo V2.
+// - mobile com movimento: mesmo vídeo real, mas sem pin — usa position:sticky
+//   (mais estável que pin no Safari iOS, que recalcula o viewport ao esconder
+//   a barra de endereço durante o scroll).
+// - prefers-reduced-motion (qualquer largura): stepper 100% estático.
 export default function Experience() {
-  const pinned = useMediaQuery(MQ_MOTION_DESKTOP);
-  return pinned ? <PinnedExperience /> : <StaticExperience />;
+  const motionOk = useMediaQuery(MQ_MOTION_ANY);
+  const isDesktop = useMediaQuery(MQ_DESKTOP);
+
+  if (!motionOk) return <StaticExperience />;
+  return isDesktop ? <PinnedExperience /> : <MobileScrubExperience />;
 }
 
 function PinnedExperience() {
@@ -54,98 +58,63 @@ function PinnedExperience() {
 
   useGSAP(
     () => {
-      const mm = gsap.matchMedia();
-      mm.add(MQ_MOTION_DESKTOP, () => {
-        const stepEls = gsap.utils.toArray<HTMLElement>(".exp-step");
-        const video = videoRef.current;
-        // #page é ancestral — fora do scope do useGSAP, então precisa de referência
-        // direta (seletor string seria buscado só dentro da seção).
-        const pageEl = document.getElementById("page");
-        gsap.set(stepEls.slice(1), { opacity: 0.35 });
+      const stepEls = gsap.utils.toArray<HTMLElement>(".exp-step");
+      const video = videoRef.current;
+      // #page é ancestral — fora do scope do useGSAP, então precisa de referência
+      // direta (seletor string seria buscado só dentro da seção).
+      const pageEl = document.getElementById("page");
+      gsap.set(stepEls.slice(1), { opacity: 0.35 });
 
-        // Entrada: "apagar as luzes" enquanto a seção se aproxima (todo o range fica
-        // antes do pin — nenhuma medição cruza o espaçador do pin).
-        if (pageEl) {
-          gsap.fromTo(
-            pageEl,
-            { backgroundColor: "#faf7f2" },
-            {
-              backgroundColor: "#12100d",
-              ease: "none",
-              immediateRender: false,
-              scrollTrigger: { trigger: ref.current, start: "top 85%", end: "top 8%", scrub: true },
-            },
-          );
-        }
-
-        const tl = gsap.timeline({
-          scrollTrigger: {
-            trigger: ref.current,
-            start: "top top",
-            end: "+=280%",
-            pin: true,
-            scrub: 0.6,
-            anticipatePin: 1,
-            onToggle: (self) => document.body.classList.toggle("in-dark", self.isActive),
+      // Entrada: "apagar as luzes" enquanto a seção se aproxima (todo o range fica
+      // antes do pin — nenhuma medição cruza o espaçador do pin).
+      if (pageEl) {
+        gsap.fromTo(
+          pageEl,
+          { backgroundColor: "#faf7f2" },
+          {
+            backgroundColor: "#12100d",
+            ease: "none",
+            immediateRender: false,
+            scrollTrigger: { trigger: ref.current, start: "top 85%", end: "top 8%", scrub: true },
           },
-        });
+        );
+      }
 
-        // scrubState.t é só o "alvo": o valor para onde o vídeo deveria estar,
-        // segundo a posição do scroll. Quem realmente busca no vídeo é o
-        // governador abaixo — nenhum onUpdate aqui.
-        const scrubState = { t: 0 };
-        if (video) {
-          video.pause();
-          tl.to(scrubState, { t: VIDEO_DURATION, ease: "none", duration: 3.9 }, 0);
-        }
-
-        tl.to(".exp-progress-fill", { scaleX: 1, ease: "none", duration: 3.9 }, 0);
-        steps.forEach((_, i) => {
-          if (i === 0) return;
-          tl.to(stepEls[i - 1], { opacity: 0.35, duration: 0.45 }, i)
-            .to(stepEls[i], { opacity: 1, duration: 0.45 }, i);
-        });
-        // Saída ainda pinada: o palco se despede enquanto as luzes voltam.
-        tl.to(".exp-stage", { opacity: 0, duration: 0.45 }, 3.9);
-        if (pageEl) {
-          tl.to(pageEl, { backgroundColor: "#faf7f2", ease: "none", duration: 0.5 }, 3.95);
-        }
-
-        // Governador do scrub: roda em TODO frame do ticker do GSAP — não só
-        // enquanto o tween acima está "ativo" — e nunca deixa video.currentTime
-        // avançar mais rápido que MAX_SEEK_RATE (segundos de vídeo por segundo
-        // real). Sem isso, um scroll brusco pede um salto de vários segundos
-        // num único frame, o navegador não tem esse trecho decodificado ainda,
-        // e a tela trava/pisca. Rodar no ticker (em vez de dentro do onUpdate do
-        // tween) evita dois bugs: o vídeo ficar preso no meio do caminho quando
-        // o tween "termina" antes do governador alcançar o alvo, e um dt
-        // desatualizado inflar o primeiro passo depois de um período parado.
-        let governor: (() => void) | null = null;
-        if (video) {
-          let lastTick = performance.now();
-          governor = () => {
-            if (video.readyState < 1) return;
-            const max = video.duration || VIDEO_DURATION;
-            const target = Math.min(Math.max(scrubState.t, 0), max - 0.05);
-
-            const now = performance.now();
-            const dt = Math.min((now - lastTick) / 1000, 0.1);
-            lastTick = now;
-
-            const maxStep = MAX_SEEK_RATE * dt;
-            const delta = target - video.currentTime;
-            const clampedDelta = Math.max(-maxStep, Math.min(maxStep, delta));
-            if (Math.abs(clampedDelta) > 0.0005) {
-              video.currentTime += clampedDelta;
-            }
-          };
-          gsap.ticker.add(governor);
-        }
-
-        return () => {
-          if (governor) gsap.ticker.remove(governor);
-        };
+      const tl = gsap.timeline({
+        scrollTrigger: {
+          trigger: ref.current,
+          start: "top top",
+          end: "+=280%",
+          pin: true,
+          scrub: 0.6,
+          anticipatePin: 1,
+          onToggle: (self) => document.body.classList.toggle("in-dark", self.isActive),
+        },
       });
+
+      // scrubState.t é só o "alvo": o valor para onde o vídeo deveria estar,
+      // segundo a posição do scroll. Quem realmente busca no vídeo é o
+      // governador (attachScrubGovernor), não um onUpdate aqui.
+      const scrubState = { t: 0 };
+      if (video) {
+        video.pause();
+        tl.to(scrubState, { t: VIDEO_DURATION, ease: "none", duration: 3.9 }, 0);
+      }
+
+      tl.to(".exp-progress-fill", { scaleX: 1, ease: "none", duration: 3.9 }, 0);
+      steps.forEach((_, i) => {
+        if (i === 0) return;
+        tl.to(stepEls[i - 1], { opacity: 0.35, duration: 0.45 }, i)
+          .to(stepEls[i], { opacity: 1, duration: 0.45 }, i);
+      });
+      // Saída ainda pinada: o palco se despede enquanto as luzes voltam.
+      tl.to(".exp-stage", { opacity: 0, duration: 0.45 }, 3.9);
+      if (pageEl) {
+        tl.to(pageEl, { backgroundColor: "#faf7f2", ease: "none", duration: 0.5 }, 3.95);
+      }
+
+      const detachGovernor = video ? attachScrubGovernor(video, scrubState, VIDEO_DURATION) : null;
+      return () => detachGovernor?.();
     },
     { scope: ref },
   );
@@ -197,6 +166,141 @@ function PinnedExperience() {
               A jornada dentro da clínica — o vídeo avança com o seu scroll.
             </figcaption>
           </figure>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// Mobile: mesmo vídeo real e scrub por scroll do desktop, mas sem GSAP pin —
+// usa position:sticky (nativo, mais previsível que pin no Safari iOS quando a
+// barra de endereço aparece/some durante o scroll). O vídeo só é buscado da
+// rede quando a seção se aproxima da tela.
+function MobileScrubExperience() {
+  const ref = useRef<HTMLElement | null>(null);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [videoReady, setVideoReady] = useState(false);
+
+  useEffect(() => {
+    const el = wrapperRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setVideoReady(true);
+          io.disconnect();
+        }
+      },
+      { rootMargin: "60% 0px 60% 0px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      ([entry]) => document.body.classList.toggle("in-dark", entry.isIntersecting),
+      { rootMargin: "-10% 0px -10% 0px" },
+    );
+    io.observe(el);
+    return () => {
+      io.disconnect();
+      document.body.classList.remove("in-dark");
+    };
+  }, []);
+
+  useGSAP(
+    () => {
+      const video = videoRef.current;
+      const stepEls = gsap.utils.toArray<HTMLElement>(".exp-step-m");
+      gsap.set(stepEls.slice(1), { opacity: 0 });
+
+      const scrubState = { t: 0 };
+      const tl = gsap.timeline({
+        scrollTrigger: {
+          trigger: wrapperRef.current,
+          start: "top top",
+          end: "bottom bottom",
+          scrub: 0.6,
+        },
+      });
+
+      if (video) {
+        video.pause();
+        tl.to(scrubState, { t: VIDEO_DURATION, ease: "none", duration: 3.9 }, 0);
+      }
+      tl.to(".exp-progress-fill-m", { scaleX: 1, ease: "none", duration: 3.9 }, 0);
+      // As legendas ficam empilhadas no mesmo lugar (não numa lista lado a lado
+      // como no desktop), então a saída precisa terminar antes da entrada
+      // começar — um crossfade simultâneo aqui embaralharia os dois textos.
+      steps.forEach((_, i) => {
+        if (i === 0) return;
+        tl.to(stepEls[i - 1], { opacity: 0, duration: 0.18 }, i - 0.18).to(
+          stepEls[i],
+          { opacity: 1, duration: 0.18 },
+          i,
+        );
+      });
+
+      const detachGovernor = video ? attachScrubGovernor(video, scrubState, VIDEO_DURATION) : null;
+      return () => detachGovernor?.();
+    },
+    { scope: ref },
+  );
+
+  return (
+    <section id="experiencia" ref={ref} className="dark-act bg-night text-cream">
+      <div className="container-x pt-20 pb-10">
+        <p className="eyebrow">A experiência</p>
+        <h2 className="display mt-5 max-w-[18ch] text-[clamp(1.9rem,7vw,2.6rem)]">
+          Do primeiro olá ao resultado, <em className="text-champagne italic">sem pressa</em>.
+        </h2>
+      </div>
+
+      {/* Altura extra = "distância presa" na tela: (altura do wrapper − altura da
+          tela) é quanto o usuário rola com o vídeo grudado, tocando o scrub. */}
+      <div ref={wrapperRef} className="relative h-[260vh]">
+        <div className="sticky top-0 h-svh w-full overflow-hidden">
+          <video
+            ref={videoRef}
+            className="absolute inset-0 h-full w-full object-cover"
+            muted
+            playsInline
+            preload="metadata"
+            poster={MEDIA["V2-f1"].webp}
+            aria-hidden="true"
+          >
+            {videoReady && <source src={EXPERIENCE_VIDEO.src} type="video/mp4" />}
+          </video>
+          <div
+            className="pointer-events-none absolute inset-0 bg-gradient-to-t from-night from-10% via-night/25 via-45% to-transparent"
+            aria-hidden="true"
+          />
+
+          <div className="absolute inset-x-0 bottom-0 px-5 pb-9">
+            <div className="grid">
+              {steps.map((s, i) => (
+                <div
+                  key={s.num}
+                  className={`exp-step-m [grid-area:1/1] ${i === 0 ? "opacity-100" : "opacity-0"}`}
+                >
+                  <span className="font-display text-base text-champagne/85 italic" aria-hidden="true">
+                    {s.num}
+                  </span>
+                  <h3 className="font-display text-2xl font-normal">{s.title}</h3>
+                  <p className="mt-1.5 max-w-[38ch] text-[0.9rem] leading-relaxed text-cream/75">
+                    {s.copy}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-5 h-px w-full bg-cream/20" aria-hidden="true">
+              <div className="exp-progress-fill-m h-full origin-left scale-x-0 bg-champagne" />
+            </div>
+          </div>
         </div>
       </div>
     </section>
